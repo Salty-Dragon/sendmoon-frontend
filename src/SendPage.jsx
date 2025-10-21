@@ -1,4 +1,3 @@
-// src/SendPage.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useForm } from 'react-hook-form';
@@ -9,73 +8,70 @@ const API_BASE = '';  // Relative path—proxied to https://sendmoon.xyz/api
 
 function SendPage() {
   const [memecoins, setMemecoins] = useState([]);
+  const [selectedSymbol, setSelectedSymbol] = useState('DOGE');
   const [balance, setBalance] = useState(0);
-  const [feeData, setFeeData] = useState({ feeDoge: 0, feeUsd: 0 });
+  const [feeData, setFeeData] = useState({ feeCoin: 0, feeUsd: 0 });
   const [status, setStatus] = useState(null);
   const [claimCodeAfterPay, setClaimCodeAfterPay] = useState(null);
   const [processingGiftId, setProcessingGiftId] = useState(null);
-  const { register, handleSubmit, formState: { errors }, reset, watch } = useForm({
+  const { register, handleSubmit, formState: { errors }, reset, watch, setValue } = useForm({
     mode: 'onBlur'
   });
 
+  // Watch fields for live USD calculations
   const amount = watch('amount');
-
-  const dogePrice = memecoins[0]?.price_usd || 0;
-  const usdValue = parseFloat(amount || 0) * dogePrice;
+  const memecoin = memecoins.find(c => c.symbol === selectedSymbol);
+  const coinPrice = memecoin?.price_usd || 0;
+  const usdValue = parseFloat(amount || 0) * coinPrice;
   const maxUsd = 10;  // Beta cap (consider fetching from /api/config for dynamic)
-  const maxAmountUsd = dogePrice > 0 ? maxUsd / dogePrice : 0;  // Dynamic max in DOGE
-  const maxAmountPool = Math.max(0, balance - feeData.feeDoge);  // Ensure non-negative
-  const effectiveMax = Math.min(maxAmountUsd, maxAmountPool);  // No 10k—covered
-
-  const totalUsd = usdValue + 1 + feeData.feeUsd;
+  const maxAmountUsd = coinPrice > 0 ? maxUsd / coinPrice : 0;
+  const maxAmountPool = Math.max(0, balance - feeData.feeCoin); // Ensure non-negative
+  const effectiveMax = Math.min(maxAmountUsd, maxAmountPool);
+  const totalUsd = usdValue + 1 + (feeData.feeUsd || 0);
 
   useEffect(() => {
     fetchMemecoins();
-    fetchFee();
   }, []);
+
+  useEffect(() => {
+    // If memecoins loaded, set selected to first available if not set
+    if (memecoins.length > 0 && !memecoins.some(c => c.symbol === selectedSymbol)) {
+      setSelectedSymbol(memecoins[0].symbol);
+    }
+  }, [memecoins, selectedSymbol]);
+
+  useEffect(() => {
+    if (selectedSymbol) {
+      fetchBalance(selectedSymbol);
+      fetchFee(selectedSymbol);
+      reset({ amount: '', recipient_email: '', sender_name: '', message: '', return_address: '' });
+    }
+  }, [selectedSymbol, reset]);
 
   const fetchMemecoins = async () => {
     try {
       const res = await axios.get(`${API_BASE}/api/memecoins`);
       setMemecoins(res.data.memecoins);
     } catch (err) {
-      if (typeof toast?.error === 'function') {
-        toast.error('Failed to load memecoins');
-      } else {
-        console.error('Failed to load memecoins');
-      }
+      toast.error?.('Failed to load memecoins');
     }
   };
 
-  const fetchFee = async () => {
+  const fetchFee = async (coin) => {
     try {
-      const res = await axios.get(`${API_BASE}/api/doge-fee-usd`);
+      const res = await axios.get(`${API_BASE}/api/${coin}/fee-usd`);
       setFeeData(res.data);
     } catch (err) {
-      if (typeof toast?.error === 'function') {
-        toast.error('Failed to load fee estimate');
-      } else {
-        console.error('Failed to load fee estimate');
-      }
+      toast.error?.('Failed to load fee estimate');
     }
   };
-
-  useEffect(() => {
-    if (memecoins[0]?.symbol === 'DOGE') {
-      fetchBalance('DOGE');
-    }
-  }, [memecoins]);
 
   const fetchBalance = async (coin) => {
     try {
       const res = await axios.get(`${API_BASE}/api/pools/${coin}/balance`);
       setBalance(res.data.balance);
     } catch (err) {
-      if (typeof toast?.error === 'function') {
-        toast.error('Failed to load balance');
-      } else {
-        console.error('Failed to load balance');
-      }
+      toast.error?.('Failed to load balance');
     }
   };
 
@@ -83,50 +79,23 @@ function SendPage() {
     try {
       const res = await axios.post(`${API_BASE}/api/gifts`, {
         ...data,
+        symbol: selectedSymbol,
         delivery_method: 'EMAIL',
       });
       if (res.data.success) {
         setProcessingGiftId(res.data.gift_id);
-        setClaimCodeAfterPay(res.data.claim_code);  // Show code immediately, as it's generated upfront
+        setClaimCodeAfterPay(res.data.claim_code);
         window.open(res.data.checkoutLink, '_blank');
-        if (typeof toast?.success === 'function') {
-          toast.success('Pay the invoice in the new tab. Recipient will be notified automatically once confirmed!');
-        } else {
-          console.log('Pay the invoice in the new tab. Recipient will be notified automatically once confirmed!');
-        }
+        toast.success?.('Pay the invoice in the new tab. Recipient will be notified automatically once confirmed!');
         reset();
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Send failed';
-      if (typeof toast?.error === 'function') {
-        toast.error(errorMsg);
-      } else {
-        console.error(errorMsg);
-      }
+      toast.error?.(errorMsg);
     }
   };
 
-  // Optional: Add a status check button or auto-refresh for the gift
-  const checkGiftStatus = async () => {
-    if (!processingGiftId) return;
-    try {
-      // You'd need a new endpoint like GET /api/gift-status/:id returning status
-      // For now, placeholder—implement if desired
-      if (typeof toast?.info === 'function') {
-        toast.info('Gift processing... Check email for updates.');
-      } else {
-        console.info('Gift processing... Check email for updates.');
-      }
-    } catch (err) {
-      if (typeof toast?.error === 'function') {
-        toast.error('Status check failed');
-      } else {
-        console.error('Status check failed');
-      }
-    }
-  };
-
-  const networkFeeDisplay = feeData.feeUsd < 0.01 ? 'Under 1 cent' : `$${feeData.feeUsd.toFixed(4)}`;
+  const networkFeeDisplay = feeData.feeUsd < 0.01 ? 'Under 1 cent' : `$${feeData.feeUsd?.toFixed(4)}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-space-gradient-start via-space-gradient-end to-space-bg text-space-secondary flex flex-col items-center justify-center p-4 font-sans">
@@ -135,7 +104,23 @@ function SendPage() {
         <form onSubmit={handleSubmit(onSend)} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1 text-space-secondary">
-              Amount (DOGE) <span className="text-xs text-white/70">(Max: {Number.isFinite(effectiveMax) ? effectiveMax.toFixed(8) : '0'} DOGE | ~${maxUsd} USD beta limit)</span>
+              Select Memecoin <span className="text-space-error">*</span>
+            </label>
+            <select
+              value={selectedSymbol}
+              onChange={e => setSelectedSymbol(e.target.value)}
+              className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary"
+            >
+              {memecoins.map(coin => (
+                <option key={coin.symbol} value={coin.symbol}>
+                  {coin.symbol} - {coin.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1 text-space-secondary">
+              Amount ({selectedSymbol}) <span className="text-xs text-white/70">(Max: {Number.isFinite(effectiveMax) ? effectiveMax.toFixed(8) : '0'} {selectedSymbol} | ~${maxUsd} USD beta limit)</span>
             </label>
             <input 
               type="number" 
@@ -145,7 +130,7 @@ function SendPage() {
                 min: 0.01
               })} 
               className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50" 
-              placeholder="Enter amount in DOGE"
+              placeholder={`Enter amount in ${selectedSymbol}`}
             />
             {errors.amount && <p className="text-space-error text-sm mt-1">{errors.amount.message || 'Invalid amount'}</p>}
             {usdValue > maxUsd && !errors.amount && (
@@ -218,7 +203,7 @@ function SendPage() {
             </label>
             <input 
               {...register('return_address')} 
-              placeholder="Your DOGE address for returns" 
+              placeholder={`Your ${selectedSymbol} address for returns`} 
               className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50" 
             />
           </div>
@@ -226,11 +211,11 @@ function SendPage() {
             <div className="text-sm text-space-success bg-black/20 p-3 rounded-lg space-y-1">
               <p className="font-medium">Total cost: ${Number.isFinite(totalUsd) ? totalUsd.toFixed(2) : '0.00'} USD</p>
               <ul className="text-xs space-y-0.5 list-disc list-inside">
-                <li>DOGE: ${Number.isFinite(usdValue) ? usdValue.toFixed(4) : '0.0000'}</li>
+                <li>{selectedSymbol}: ${Number.isFinite(usdValue) ? usdValue.toFixed(4) : '0.0000'}</li>
                 <li>Platform Fee: $1</li>
                 <li>Network: {networkFeeDisplay}</li>
               </ul>
-              {usdValue > (maxUsd * 0.8) && (  // Warn if >80% of cap
+              {usdValue > (maxUsd * 0.8) && (
                 <p className="text-space-warning text-xs mt-1">Approaching beta limit—max ${maxUsd} USD.</p>
               )}
             </div>
