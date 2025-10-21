@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  /* Space void palette – ultra-dark, Elon-esque minimalism (toned-down accents) */
+  --color-space-bg: #000000; /* Pure cosmic black */
+  --color-space-gradient-start: #000011; /* Deep void blue */
+  --color-space-gradient-end: #000033; /* Subtle nebula blue-black */
+  --color-space-glass: rgba(255, 255, 255, 0.05); /* Ethereal frost */
+  --color-space-primary: #3b82f6; /* Soft electric blue (toned-down from neon) */
+  --color-space-secondary: #f1f5f9; /* Crisp white-gray text */
+  --color-space-success: #15803d; /* Deeper muted green (tamed further) */
+  --color-space-warning: #ffaa00; /* Solar flare amber */
+  --color-space-error: #ff4444; /* Meteor red */
+
+  /* Fonts – keep Inter/Poppins for clean, modern readability */
+  --font-sans: "Inter", sans-serif;
+  --font-display: "Poppins", sans-serif;
+
+  /* Enhanced utilities for space effects */
+  --shadow-space-glow: 0 0 15px rgba(59, 130, 246, 0.3); /* Softer blue aura */
+  --backdrop-blur: blur(16px); /* Deeper immersion */
+}
