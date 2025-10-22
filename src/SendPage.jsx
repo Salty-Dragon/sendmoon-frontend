@@ -25,7 +25,9 @@ function SendPage() {
   const usdValue = parseFloat(amount || 0) * coinPrice;
   const maxUsd = 10;  // Beta cap (consider fetching from /api/config for dynamic)
   const maxAmountUsd = coinPrice > 0 ? maxUsd / coinPrice : 0;
-  const maxAmountPool = Math.max(0, balance - feeData.feeCoin); // Ensure non-negative
+  const safeBalance = Number(balance) || 0;
+  const safeFeeCoin = Number(feeData.feeCoin) || 0;
+  const maxAmountPool = Math.max(0, safeBalance - safeFeeCoin);
   const effectiveMax = Math.min(maxAmountUsd, maxAmountPool);
   const totalUsd = usdValue + 1 + (feeData.feeUsd || 0);
 
@@ -63,6 +65,7 @@ function SendPage() {
       setFeeData(res.data);
     } catch (err) {
       toast.error?.('Failed to load fee estimate');
+      setFeeData({ feeCoin: 0, feeUsd: 0 });
     }
   };
 
@@ -72,6 +75,7 @@ function SendPage() {
       setBalance(res.data.balance);
     } catch (err) {
       toast.error?.('Failed to load balance');
+      setBalance(0);
     }
   };
 
@@ -96,6 +100,7 @@ function SendPage() {
   };
 
   const networkFeeDisplay = feeData.feeUsd < 0.01 ? 'Under 1 cent' : `$${feeData.feeUsd?.toFixed(4)}`;
+  const platformFee = 1;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-space-gradient-start via-space-gradient-end to-space-bg text-space-secondary flex flex-col items-center justify-center p-4 font-sans">
@@ -120,7 +125,9 @@ function SendPage() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1 text-space-secondary">
-              Amount ({selectedSymbol}) <span className="text-xs text-white/70">(Max: {Number.isFinite(effectiveMax) ? effectiveMax.toFixed(8) : '0'} {selectedSymbol} | ~${maxUsd} USD beta limit)</span>
+              Amount ({selectedSymbol}) <span className="text-xs text-white/70">
+                (Max: {Number.isFinite(effectiveMax) ? effectiveMax.toFixed(8) : '0'} {selectedSymbol} | ~${maxUsd} USD beta limit)
+              </span>
             </label>
             <input 
               type="number" 
@@ -136,9 +143,23 @@ function SendPage() {
             {usdValue > maxUsd && !errors.amount && (
               <p className="text-space-error text-xs mt-1">Exceeds beta ${maxUsd} USD limit.</p>
             )}
-            {parseFloat(amount || 0) > maxAmountPool && (
-              <p className="text-space-warning text-xs mt-1">Exceeds available pool balance.</p>
+            {parseFloat(amount || 0) > effectiveMax && (
+              <p className="text-space-warning text-xs mt-1">Exceeds available pool balance ({balance} {selectedSymbol}).</p>
             )}
+          </div>
+          <div>
+            {/* --- Price, Fee, Platform Fee calculations in green text block --- */}
+            <div className="text-sm text-space-success bg-black/20 p-3 rounded-lg space-y-1 mb-4">
+              <p className="font-medium">Total cost: ${Number.isFinite(totalUsd) ? totalUsd.toFixed(2) : '0.00'} USD</p>
+              <ul className="text-xs space-y-0.5 list-disc list-inside">
+                <li>{selectedSymbol}: ${Number.isFinite(usdValue) ? usdValue.toFixed(4) : '0.0000'}</li>
+                <li>Platform Fee: ${platformFee}</li>
+                <li>Network Fee: {networkFeeDisplay}</li>
+              </ul>
+              {usdValue > (maxUsd * 0.8) && (
+                <p className="text-space-warning text-xs mt-1">Approaching beta limit—max ${maxUsd} USD.</p>
+              )}
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1 text-space-secondary">
@@ -207,19 +228,6 @@ function SendPage() {
               className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50" 
             />
           </div>
-          {amount && (
-            <div className="text-sm text-space-success bg-black/20 p-3 rounded-lg space-y-1">
-              <p className="font-medium">Total cost: ${Number.isFinite(totalUsd) ? totalUsd.toFixed(2) : '0.00'} USD</p>
-              <ul className="text-xs space-y-0.5 list-disc list-inside">
-                <li>{selectedSymbol}: ${Number.isFinite(usdValue) ? usdValue.toFixed(4) : '0.0000'}</li>
-                <li>Platform Fee: $1</li>
-                <li>Network: {networkFeeDisplay}</li>
-              </ul>
-              {usdValue > (maxUsd * 0.8) && (
-                <p className="text-space-warning text-xs mt-1">Approaching beta limit—max ${maxUsd} USD.</p>
-              )}
-            </div>
-          )}
           {processingGiftId && <p className="text-center text-space-warning bg-black/20 p-2 rounded-lg">Gift created! Payment processing via webhook. Recipient notified on confirmation.</p>}
           <button 
             type="submit" 
