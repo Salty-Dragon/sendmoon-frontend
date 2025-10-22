@@ -9,43 +9,63 @@ import * as hdkey from 'hdkey'; // npm install hdkey
 
 const API_BASE = '';  // Relative path—proxied to https://sendmoon.xyz/api
 
-// Dogecoin network config for bitcoinjs-lib
-const DOGE_NETWORK = {
-  messagePrefix: '\x19Dogecoin Signed Message:\n',
-  bech32: 'bc',
-  bip32: {
-    public: 0x02facafd,
-    private: 0x02fac398,
+// Supported networks for bitcoinjs-lib
+const NETWORKS = {
+  DOGE: {
+    messagePrefix: '\x19Dogecoin Signed Message:\n',
+    bech32: 'bc',
+    bip32: {
+      public: 0x02facafd,
+      private: 0x02fac398,
+    },
+    pubKeyHash: 0x1e, // Starts with 'D'
+    scriptHash: 0x16,
+    wif: 0x9e,
   },
-  pubKeyHash: 0x1e, // Starts with 'D'
-  scriptHash: 0x16,
-  wif: 0x9e,
+  TRMP: {
+    messagePrefix: '\x19Trumpow Signed Message:\n',
+    bech32: 'bc',
+    bip32: {
+      public: 0x02facafd,
+      private: 0x02fac398,
+    },
+    pubKeyHash: 0x41, // Starts with 'T'
+    scriptHash: 0x16,
+    wif: 0x9e,
+  },
 };
 
 function ClaimPage() {
   const [generatedMnemonic, setGeneratedMnemonic] = useState(null);
   const [generatedAddress, setGeneratedAddress] = useState(null);
-  const [isMounted, setIsMounted] = useState(false);  // Add mounted state to delay toast
-  const [showClaimToast, setShowClaimToast] = useState(false);  // New state for toast timing
-  const claimForm = useForm({
-    mode: 'onBlur'
-  });
+  const [giftInfo, setGiftInfo] = useState(null); // Holds symbol, amount, sender_name, etc.
+  const [loadingGift, setLoadingGift] = useState(true);
+  const [showClaimToast, setShowClaimToast] = useState(false);
+  const claimForm = useForm({ mode: 'onBlur' });
 
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  // Handle URL param for claim code
+  // Fetch gift info (symbol, amount, etc) by claim code
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
-    if (code && isMounted) {
+    if (code) {
       claimForm.setValue('code', code);
-      setShowClaimToast(true);  // Trigger toast via state
+      setLoadingGift(true);
+      axios.get(`${API_BASE}/api/claim-info?code=${code}`)
+        .then(res => {
+          setGiftInfo(res.data);
+          setShowClaimToast(true);
+        })
+        .catch(() => {
+          toast.error('Invalid or expired claim code');
+          setGiftInfo(null);
+        })
+        .finally(() => setLoadingGift(false));
+    } else {
+      setLoadingGift(false);
     }
-  }, [isMounted, claimForm]);
+    // eslint-disable-next-line
+  }, [claimForm]);
 
-  // New effect: Fire toast after state update (post-render), with safety check
   useEffect(() => {
     if (showClaimToast && toast && typeof toast.info === 'function') {
       toast.info('Claim mode activated with your gift code!');
@@ -53,74 +73,105 @@ function ClaimPage() {
     }
   }, [showClaimToast]);
 
+  // Wallet generation
   const generateWallet = () => {
+    if (!giftInfo?.symbol) return toast.error('No memecoin info.');
+    const symbol = giftInfo.symbol.toUpperCase();
+    const network = NETWORKS[symbol] || NETWORKS.DOGE;
     try {
-      // Generate 12-word mnemonic (128 bits entropy)
       const mnemonic = bip39.generateMnemonic(128);
       setGeneratedMnemonic(mnemonic);
 
-      // Derive seed from mnemonic
       const seed = bip39.mnemonicToSeedSync(mnemonic);
-
-      // Derive master key using BIP32
       const master = hdkey.fromMasterSeed(seed);
 
-      // BIP44 path for Dogecoin: m/44'/3'/0'/0/0 (coin type 3 for DOGE)
-      const path = "m/44'/3'/0'/0/0";
+      // Use DOGE's coin type (3) for both DOGE and TRMP for now
+      const coinType = 3;
+      const path = `m/44'/${coinType}'/0'/0/0`;
       const derived = master.derive(path);
 
-      // Get public key
       const publicKey = derived.publicKey;
 
-      // Generate address using bitcoinjs-lib with DOGE network
       const { address } = bitcoin.payments.p2pkh({
         pubkey: publicKey,
-        network: DOGE_NETWORK,
+        network,
       });
 
       setGeneratedAddress(address);
       claimForm.setValue('recipient_address', address);
-      if (toast && typeof toast.success === 'function') {
-        toast.success('New wallet generated! Backup your mnemonic securely.');
-      }
+      toast.success(`New ${symbol} wallet generated! Backup your mnemonic securely.`);
     } catch (err) {
-      if (toast && typeof toast.error === 'function') {
-        toast.error('Wallet generation failed: ' + err.message);
-      }
+      toast.error('Wallet generation failed: ' + err.message);
     }
   };
 
+  // Claim submit handler
   const onClaim = async (data) => {
+    if (!giftInfo?.symbol) return toast.error('Memecoin info missing');
     try {
-      const res = await axios.post(`${API_BASE}/api/claim`, data);
-      if (toast && typeof toast.success === 'function') {
-        toast.success(`Claimed! Tx: ${res.data.tx_hash}`);
-      }
+      const res = await axios.post(`${API_BASE}/api/${giftInfo.symbol}/claim`, data);
+      toast.success(`Claimed! Tx: ${res.data.tx_hash}`);
       claimForm.reset();
       setGeneratedMnemonic(null);
       setGeneratedAddress(null);
     } catch (err) {
-      if (toast && typeof toast.error === 'function') {
-        toast.error(err.response?.data?.error || 'Claim failed');
-      }
+      toast.error(err.response?.data?.error || 'Claim failed');
     }
   };
 
+  // UI logic
+  const symbol = giftInfo?.symbol?.toUpperCase() || 'DOGE';
+  const coinName = symbol === 'TRMP' ? 'TRMP' : 'DOGE';
+  const addressLabel = symbol === 'TRMP'
+    ? 'Your TRMP Address (starts with T)'
+    : 'Your DOGE Address (starts with D)';
+  const addressPattern = symbol === 'TRMP'
+    ? /^T[1-9A-HJ-NP-Za-km-z]{33}$/
+    : /^D[1-9A-HJ-NP-Za-km-z]{33}$/;
+
+  if (loadingGift) return (
+    <div className="min-h-screen flex items-center justify-center text-space-secondary bg-gradient-to-br from-space-gradient-start via-space-gradient-end to-space-bg">
+      <span className="text-xl font-bold">Loading gift info...</span>
+      <Toaster />
+    </div>
+  );
+
+  if (!giftInfo) return (
+    <div className="min-h-screen flex items-center justify-center text-space-error bg-gradient-to-br from-space-gradient-start via-space-gradient-end to-space-bg">
+      <span className="text-xl font-bold">Invalid or expired claim code.</span>
+      <Toaster />
+    </div>
+  );
+
   return (
     <div className="min-h-screen space-stars bg-gradient-to-br from-space-gradient-start via-space-gradient-end to-space-bg text-space-secondary flex flex-col items-center justify-center p-4 font-sans">
-      <header className="text-4xl font-display font-bold mb-8 text-space-primary drop-shadow-lg [filter:drop-shadow(0_0_10px_rgba(59,130,246,0.3))]">SendMoon 🚀</header>
+      <header className="text-4xl font-display font-bold mb-8 text-space-primary drop-shadow-lg [filter:drop-shadow(0_0_10px_rgba(59,130,246,0.3))]">
+        SendMoon 🚀
+      </header>
       <div className="w-full max-w-md bg-space-glass backdrop-blur-[var(--backdrop-blur)] rounded-xl p-6 shadow-lg border border-white/10">
         <form onSubmit={claimForm.handleSubmit(onClaim)} className="space-y-4">
+          <div className="mb-4 text-space-success text-center">
+            <span>
+              Claiming <b>{giftInfo.amount} {coinName}</b>
+              {giftInfo.sender_name && <> from <b>{giftInfo.sender_name}</b></>}
+              !
+            </span>
+          </div>
           <div>
             <label className="block text-sm font-medium mb-1 text-space-secondary">
               Claim Code <span className="text-space-error">*</span>
             </label>
-            <input 
-              {...claimForm.register('code', { required: 'Claim code is required' })} 
-              className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50" 
+            <input
+              {...claimForm.register('code', { required: 'Claim code is required' })}
+              className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50"
               placeholder="Enter your gift code"
+              disabled={!!giftInfo}
+              value={giftInfo.claim_code || claimForm.getValues('code')}
+              readOnly
             />
-            {claimForm.formState.errors.code && <p className="text-space-error text-sm mt-1">{claimForm.formState.errors.code.message}</p>}
+            {claimForm.formState.errors.code && (
+              <p className="text-space-error text-sm mt-1">{claimForm.formState.errors.code.message}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-2 text-space-secondary">Options to Receive Your Gift</label>
@@ -129,7 +180,7 @@ function ClaimPage() {
               onClick={generateWallet}
               className="w-full bg-space-success hover:bg-opacity-90 py-3 rounded-lg font-display font-semibold transition-all duration-200 shadow-space-glow hover:shadow-lg transform hover:-translate-y-0.5 mb-3"
             >
-              Generate New DOGE Wallet 🌕
+              Generate New {coinName} Wallet 🌕
             </button>
             {generatedMnemonic && (
               <div className="bg-black/30 p-3 rounded-lg text-sm mb-3 border border-white/20">
@@ -141,30 +192,32 @@ function ClaimPage() {
               </div>
             )}
             <label className="block text-sm font-medium mb-1 text-space-secondary">
-              Your DOGE Address (starts with D) {generatedAddress && <span className="text-space-success">(Auto-filled)</span>}
+              {addressLabel} {generatedAddress && <span className="text-space-success">(Auto-filled)</span>}
             </label>
             <input
               {...claimForm.register('recipient_address', {
-                required: !generatedAddress ? 'DOGE address is required' : false,
-                pattern: { 
-                  value: /^D[1-9A-HJ-NP-Za-km-z]{33}$/, 
-                  message: 'Invalid DOGE address (must start with D and be 34 chars)' 
+                required: !generatedAddress ? `${coinName} address is required` : false,
+                pattern: {
+                  value: addressPattern,
+                  message: `Invalid ${coinName} address (must start with ${symbol === 'TRMP' ? 'T' : 'D'} and be 34 chars)`
                 }
               })}
-              className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50" 
-              placeholder="DYourDogeAddressHere..."
+              className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50"
+              placeholder={symbol === 'TRMP' ? "TYourTrmpAddressHere..." : "DYourDogeAddressHere..."}
             />
-            {claimForm.formState.errors.recipient_address && <p className="text-space-error text-sm mt-1">{claimForm.formState.errors.recipient_address.message}</p>}
+            {claimForm.formState.errors.recipient_address && (
+              <p className="text-space-error text-sm mt-1">{claimForm.formState.errors.recipient_address.message}</p>
+            )}
           </div>
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="w-full bg-space-primary hover:bg-opacity-90 py-3 rounded-lg font-display font-semibold transition-all duration-200 shadow-space-glow hover:shadow-lg transform hover:-translate-y-0.5"
           >
-            Claim Your DOGE 🚀
+            Claim Your {coinName} 🚀
           </button>
         </form>
       </div>
-      <Toaster /> 
+      <Toaster />
     </div>
   );
 }
