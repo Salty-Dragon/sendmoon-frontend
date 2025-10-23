@@ -3,13 +3,12 @@ import axios from 'axios';
 import { useForm } from 'react-hook-form';
 import toast, { Toaster } from 'react-hot-toast';
 import { QRCodeSVG } from 'qrcode.react';
-import * as bip39 from 'bip39'; // npm install bip39
-import * as bitcoin from 'bitcoinjs-lib'; // npm install bitcoinjs-lib
-import * as hdkey from 'hdkey'; // npm install hdkey
+import * as bip39 from 'bip39';
+import * as bitcoin from 'bitcoinjs-lib';
+import * as hdkey from 'hdkey';
 
 const API_BASE = '';  // Relative path—proxied to https://sendmoon.xyz/api
 
-// Supported networks for bitcoinjs-lib
 const NETWORKS = {
   DOGE: {
     messagePrefix: '\x19Dogecoin Signed Message:\n',
@@ -21,6 +20,7 @@ const NETWORKS = {
     pubKeyHash: 0x1e, // Starts with 'D'
     scriptHash: 0x16,
     wif: 0x9e,
+    explorerBase: 'https://dogechain.info/tx/',
   },
   TRMP: {
     messagePrefix: '\x19Trumpow Signed Message:\n',
@@ -32,6 +32,7 @@ const NETWORKS = {
     pubKeyHash: 0x41, // Starts with 'T'
     scriptHash: 0x16,
     wif: 0x9e,
+    explorerBase: 'https://explorer.trumpow.meme/tx/',
   },
 };
 
@@ -41,6 +42,7 @@ function ClaimPage() {
   const [giftInfo, setGiftInfo] = useState(null); // Holds symbol, amount, sender_name, etc.
   const [loadingGift, setLoadingGift] = useState(true);
   const [showClaimToast, setShowClaimToast] = useState(false);
+  const [claimedTx, setClaimedTx] = useState(null);
   const claimForm = useForm({ mode: 'onBlur' });
 
   // Fetch gift info (symbol, amount, etc) by claim code
@@ -110,10 +112,18 @@ function ClaimPage() {
     if (!giftInfo?.symbol) return toast.error('Memecoin info missing');
     try {
       const res = await axios.post(`${API_BASE}/api/${giftInfo.symbol}/claim`, data);
-      toast.success(`Claimed! Tx: ${res.data.tx_hash}`);
+      // Instead of using toast, update claimedTx state for message
+      setClaimedTx({
+        tx_hash: res.data.tx_hash,
+        explorer: res.data.explorer,
+        amount: giftInfo.amount,
+        symbol: giftInfo.symbol,
+        address: data.recipient_address,
+      });
       claimForm.reset();
       setGeneratedMnemonic(null);
       setGeneratedAddress(null);
+      // Optionally, you can clear giftInfo to disable the form
     } catch (err) {
       toast.error(err.response?.data?.error || 'Claim failed');
     }
@@ -128,6 +138,34 @@ function ClaimPage() {
   const addressPattern = symbol === 'TRMP'
     ? /^T[1-9A-HJ-NP-Za-km-z]{33}$/
     : /^D[1-9A-HJ-NP-Za-km-z]{33}$/;
+
+  // Combined message logic
+  let topMessage = null;
+  if (claimedTx) {
+    topMessage = (
+      <div className="mb-4 text-space-success text-center bg-black/30 p-4 rounded-lg border border-space-success">
+        You have claimed <b>{claimedTx.amount} {claimedTx.symbol}</b> and it has been sent to your {claimedTx.symbol} address!
+        <br />
+        Transaction:{' '}
+        <a
+          href={claimedTx.explorer}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-space-primary underline break-all font-mono"
+        >
+          {claimedTx.tx_hash}
+        </a>
+      </div>
+    );
+  } else if (giftInfo) {
+    topMessage = (
+      <div className="mb-4 text-space-success text-center bg-black/30 p-4 rounded-lg border border-space-success">
+        Claiming <b>{giftInfo.amount} {coinName}</b>
+        {giftInfo.sender_name && <> from <b>{giftInfo.sender_name}</b></>}
+        !
+      </div>
+    );
+  }
 
   if (loadingGift) return (
     <div className="min-h-screen flex items-center justify-center text-space-secondary bg-gradient-to-br from-space-gradient-start via-space-gradient-end to-space-bg">
@@ -149,73 +187,69 @@ function ClaimPage() {
         SendMoon 🚀
       </header>
       <div className="w-full max-w-md bg-space-glass backdrop-blur-[var(--backdrop-blur)] rounded-xl p-6 shadow-lg border border-white/10">
-        <form onSubmit={claimForm.handleSubmit(onClaim)} className="space-y-4">
-          <div className="mb-4 text-space-success text-center">
-            <span>
-              Claiming <b>{giftInfo.amount} {coinName}</b>
-              {giftInfo.sender_name && <> from <b>{giftInfo.sender_name}</b></>}
-              !
-            </span>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1 text-space-secondary">
-              Claim Code <span className="text-space-error">*</span>
-            </label>
-            <input
-              {...claimForm.register('code', { required: 'Claim code is required' })}
-              className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50"
-              placeholder="Enter your gift code"
-              disabled={!!giftInfo}
-              value={giftInfo.claim_code || claimForm.getValues('code')}
-              readOnly
-            />
-            {claimForm.formState.errors.code && (
-              <p className="text-space-error text-sm mt-1">{claimForm.formState.errors.code.message}</p>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2 text-space-secondary">Options to Receive Your Gift</label>
+        {topMessage}
+        {!claimedTx && (
+          <form onSubmit={claimForm.handleSubmit(onClaim)} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1 text-space-secondary">
+                Claim Code <span className="text-space-error">*</span>
+              </label>
+              <input
+                {...claimForm.register('code', { required: 'Claim code is required' })}
+                className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50"
+                placeholder="Enter your gift code"
+                disabled={!!giftInfo}
+                value={giftInfo.claim_code || claimForm.getValues('code')}
+                readOnly
+              />
+              {claimForm.formState.errors.code && (
+                <p className="text-space-error text-sm mt-1">{claimForm.formState.errors.code.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2 text-space-secondary">Options to Receive Your Gift</label>
+              <button
+                type="button"
+                onClick={generateWallet}
+                className="w-full bg-space-success hover:bg-opacity-90 py-3 rounded-lg font-display font-semibold transition-all duration-200 shadow-space-glow hover:shadow-lg transform hover:-translate-y-0.5 mb-3"
+              >
+                Generate New {coinName} Wallet 🌕
+              </button>
+              {generatedMnemonic && (
+                <div className="bg-black/30 p-3 rounded-lg text-sm mb-3 border border-white/20">
+                  <p className="font-medium text-space-secondary mb-1"><strong>Mnemonic (Backup this!):</strong></p>
+                  <p className="font-mono text-space-primary break-all mb-1 bg-black/50 p-2 rounded text-xs">{generatedMnemonic}</p>
+                  <p className="font-medium text-space-secondary mb-1"><strong>Address:</strong></p>
+                  <p className="font-mono text-space-primary break-all bg-black/50 p-2 rounded text-xs">{generatedAddress}</p>
+                  <p className="text-space-warning text-xs mt-2">Never share your mnemonic!</p>
+                </div>
+              )}
+              <label className="block text-sm font-medium mb-1 text-space-secondary">
+                {addressLabel} {generatedAddress && <span className="text-space-success">(Auto-filled)</span>}
+              </label>
+              <input
+                {...claimForm.register('recipient_address', {
+                  required: !generatedAddress ? `${coinName} address is required` : false,
+                  pattern: {
+                    value: addressPattern,
+                    message: `Invalid ${coinName} address (must start with ${symbol === 'TRMP' ? 'T' : 'D'} and be 34 chars)`
+                  }
+                })}
+                className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50"
+                placeholder={symbol === 'TRMP' ? "TYourTrmpAddressHere..." : "DYourDogeAddressHere..."}
+              />
+              {claimForm.formState.errors.recipient_address && (
+                <p className="text-space-error text-sm mt-1">{claimForm.formState.errors.recipient_address.message}</p>
+              )}
+            </div>
             <button
-              type="button"
-              onClick={generateWallet}
-              className="w-full bg-space-success hover:bg-opacity-90 py-3 rounded-lg font-display font-semibold transition-all duration-200 shadow-space-glow hover:shadow-lg transform hover:-translate-y-0.5 mb-3"
+              type="submit"
+              className="w-full bg-space-primary hover:bg-opacity-90 py-3 rounded-lg font-display font-semibold transition-all duration-200 shadow-space-glow hover:shadow-lg transform hover:-translate-y-0.5"
             >
-              Generate New {coinName} Wallet 🌕
+              Claim Your {coinName} 🚀
             </button>
-            {generatedMnemonic && (
-              <div className="bg-black/30 p-3 rounded-lg text-sm mb-3 border border-white/20">
-                <p className="font-medium text-space-secondary mb-1"><strong>Mnemonic (Backup this!):</strong></p>
-                <p className="font-mono text-space-primary break-all mb-1 bg-black/50 p-2 rounded text-xs">{generatedMnemonic}</p>
-                <p className="font-medium text-space-secondary mb-1"><strong>Address:</strong></p>
-                <p className="font-mono text-space-primary break-all bg-black/50 p-2 rounded text-xs">{generatedAddress}</p>
-                <p className="text-space-warning text-xs mt-2">Never share your mnemonic!</p>
-              </div>
-            )}
-            <label className="block text-sm font-medium mb-1 text-space-secondary">
-              {addressLabel} {generatedAddress && <span className="text-space-success">(Auto-filled)</span>}
-            </label>
-            <input
-              {...claimForm.register('recipient_address', {
-                required: !generatedAddress ? `${coinName} address is required` : false,
-                pattern: {
-                  value: addressPattern,
-                  message: `Invalid ${coinName} address (must start with ${symbol === 'TRMP' ? 'T' : 'D'} and be 34 chars)`
-                }
-              })}
-              className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50"
-              placeholder={symbol === 'TRMP' ? "TYourTrmpAddressHere..." : "DYourDogeAddressHere..."}
-            />
-            {claimForm.formState.errors.recipient_address && (
-              <p className="text-space-error text-sm mt-1">{claimForm.formState.errors.recipient_address.message}</p>
-            )}
-          </div>
-          <button
-            type="submit"
-            className="w-full bg-space-primary hover:bg-opacity-90 py-3 rounded-lg font-display font-semibold transition-all duration-200 shadow-space-glow hover:shadow-lg transform hover:-translate-y-0.5"
-          >
-            Claim Your {coinName} 🚀
-          </button>
-        </form>
+          </form>
+        )}
       </div>
       <Toaster />
     </div>
