@@ -244,8 +244,11 @@ function SendPage() {
           {/* Turnstile widget for bot protection */}
           <div className="my-3 flex items-center justify-center">
             <Turnstile
-              sitekey={TURNSTILE_SITE_KEY}
-              onSuccess={setTurnstileToken}
+              siteKey={TURNSTILE_SITE_KEY}
+              onVerify={(token) => {
+                console.debug('Turnstile verified token:', token);
+                setTurnstileToken(token);
+              }}
               theme="dark"
             />
           </div>
