@@ -4,12 +4,6 @@ import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import { QRCodeSVG } from 'qrcode.react';
 
-// Import Turnstile component
-import Turnstile from 'react-cloudflare-turnstile';
-
-// Read Turnstile site key from environment
-const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
-
 const API_BASE = '';  // Relative path—proxied to https://sendmoon.xyz/api
 
 function SendPage() {
@@ -20,7 +14,6 @@ function SendPage() {
   const [status, setStatus] = useState(null);
   const [claimCodeAfterPay, setClaimCodeAfterPay] = useState(null);
   const [processingGiftId, setProcessingGiftId] = useState(null);
-  const [turnstileToken, setTurnstileToken] = useState('');
   const { register, handleSubmit, formState: { errors }, reset, watch, setValue } = useForm({
     mode: 'onBlur'
   });
@@ -87,16 +80,11 @@ function SendPage() {
   };
 
   const onSend = async (data) => {
-    if (!turnstileToken) {
-      toast.error('Please complete the bot check before submitting.');
-      return;
-    }
     try {
       const res = await axios.post(`${API_BASE}/api/gifts`, {
         ...data,
         symbol: selectedSymbol,
         delivery_method: 'EMAIL',
-        turnstileToken,  // Include Turnstile token
       });
       if (res.data.success) {
         setProcessingGiftId(res.data.gift_id);
@@ -104,7 +92,6 @@ function SendPage() {
         window.open(res.data.checkoutLink, '_blank');
         toast.success?.('Pay the invoice in the new tab. Recipient will be notified automatically once confirmed!');
         reset();
-        setTurnstileToken(''); // reset after submit
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Send failed';
@@ -239,17 +226,6 @@ function SendPage() {
               {...register('return_address')} 
               placeholder={`Your ${selectedSymbol} address for returns`} 
               className="w-full p-3 bg-transparent border border-white/30 rounded-lg focus:border-space-primary focus:outline-none transition-all duration-200 text-space-secondary placeholder:text-white/40 hover:border-white/50" 
-            />
-          </div>
-          {/* Turnstile widget for bot protection */}
-          <div className="my-3 flex items-center justify-center">
-            <Turnstile
-              siteKey={TURNSTILE_SITE_KEY}
-              onVerify={(token) => {
-                console.debug('Turnstile verified token:', token);
-                setTurnstileToken(token);
-              }}
-              theme="dark"
             />
           </div>
           {processingGiftId && <p className="text-center text-space-warning bg-black/20 p-2 rounded-lg">Gift created! Payment processing via webhook. Recipient notified on confirmation.</p>}

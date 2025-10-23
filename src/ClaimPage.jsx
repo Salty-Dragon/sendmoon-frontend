@@ -7,12 +7,6 @@ import * as bip39 from 'bip39';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as hdkey from 'hdkey';
 
-// Import Turnstile component
-import Turnstile from 'react-cloudflare-turnstile';
-
-// Read Turnstile site key from environment
-const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
-
 const API_BASE = '';  // Relative path—proxied to https://sendmoon.xyz/api
 
 const NETWORKS = {
@@ -49,7 +43,6 @@ function ClaimPage() {
   const [loadingGift, setLoadingGift] = useState(true);
   const [showClaimToast, setShowClaimToast] = useState(false);
   const [claimedTx, setClaimedTx] = useState(null);
-  const [turnstileToken, setTurnstileToken] = useState('');
   const claimForm = useForm({ mode: 'onBlur' });
 
   // Fetch gift info (symbol, amount, etc) by claim code
@@ -117,14 +110,9 @@ function ClaimPage() {
   // Claim submit handler
   const onClaim = async (data) => {
     if (!giftInfo?.symbol) return toast.error('Memecoin info missing');
-    if (!turnstileToken) {
-      toast.error('Please complete the bot check before submitting.');
-      return;
-    }
     try {
       const res = await axios.post(`${API_BASE}/api/${giftInfo.symbol}/claim`, {
         ...data,
-        turnstileToken, // Include Turnstile token
       });
       setClaimedTx({
         tx_hash: res.data.tx_hash,
@@ -136,7 +124,6 @@ function ClaimPage() {
       claimForm.reset();
       setGeneratedMnemonic(null);
       setGeneratedAddress(null);
-      setTurnstileToken('');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Claim failed');
     }
@@ -254,17 +241,6 @@ function ClaimPage() {
               {claimForm.formState.errors.recipient_address && (
                 <p className="text-space-error text-sm mt-1">{claimForm.formState.errors.recipient_address.message}</p>
               )}
-            </div>
-            {/* Turnstile widget for bot protection */}
-            <div className="my-3 flex items-center justify-center">
-              <Turnstile
-                siteKey={TURNSTILE_SITE_KEY}
-                onVerify={(token) => {
-                  console.debug('Turnstile verified token:', token);
-                  setTurnstileToken(token);
-                }}
-                theme="dark"
-              />
             </div>
             <button
               type="submit"
