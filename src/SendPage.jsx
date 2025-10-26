@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import { QRCodeSVG } from 'qrcode.react';
+import logo from './assets/logo.svg'; // <-- NEW LOGO IMPORT
 
 const API_BASE = '';  // Relative path—proxied to https://sendmoon.xyz/api
 
@@ -104,7 +105,13 @@ function SendPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-space-gradient-start via-space-gradient-end to-space-bg text-space-secondary flex flex-col items-center justify-center p-4 font-sans">
-      <header className="text-4xl font-display font-bold mb-8 text-space-primary drop-shadow-lg [filter:drop-shadow(0_0_10px_rgba(59,130,246,0.3))]">SendMoon 🚀</header>
+      <header className="flex flex-col items-center mb-8">
+        {/* --- LOGO REPLACES "SendMoon 🚀" --- */}
+        <img src={logo} alt="SendMoon Logo" className="w-32 h-32 mb-4 drop-shadow-lg" />
+        <span className="text-4xl font-display font-bold text-space-primary drop-shadow-lg [filter:drop-shadow(0_0_10px_rgba(59,130,246,0.3))]">
+          SendMoon
+        </span>
+      </header>
       <div className="w-full max-w-md bg-space-glass backdrop-blur-[var(--backdrop-blur)] rounded-xl p-6 shadow-lg border border-white/10">
         <form onSubmit={handleSubmit(onSend)} className="space-y-4">
           <div>
